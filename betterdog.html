@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dog Runner HD</title>
+  <style>
+    :root{--width:960px;--height:540px}
+    *{box-sizing:border-box}
+    body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#101820;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#fff;overflow:hidden}
+    .game-wrap{width:var(--width);max-width:95vw;background:#000;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.8)}
+    .ui{display:flex;justify-content:space-between;padding:12px 18px;background:rgba(0,0,0,0.7);position:absolute;width:100%;z-index:10}
+    .score{font-size:20px;font-weight:700}
+    .stage{position:relative;width:100%;height:var(--height);overflow:hidden;cursor:pointer;background:linear-gradient(#3a7bd5,#00d2ff)}
+    canvas{display:block;width:100%;height:100%}
+    .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);color:white;z-index:20}
+    .panel{background:rgba(20,20,20,0.95);padding:24px;border-radius:12px;text-align:center;max-width:80%}
+    button{background:#0b74ff;color:white;border:0;padding:12px 18px;border-radius:8px;font-weight:700;cursor:pointer;margin-top:12px}
+    h2{margin-top:0}
+  </style>
+</head>
+<body>
+  <div class="game-wrap">
+    <div class="ui">
+      <div class="score">Score: <span id="score">0</span></div>
+      <div><small>Space / Click / Tap to Jump</small></div>
+    </div>
+    <div class="stage" id="stage">
+      <canvas id="gameCanvas"></canvas>
+      <div class="overlay" id="startOverlay">
+        <div class="panel">
+          <h2>🐶 Dog Runner HD</h2>
+          <p>Hyper-realistic emoji runner game.<br/>Avoid obstacles and go as far as you can!</p>
+          <button id="startBtn">Start</button>
+        </div>
+      </div>
+      <div class="overlay" id="gameOverOverlay" style="display:none">
+        <div class="panel">
+          <h2>Game Over</h2>
+          <p>Your Score: <strong id="finalScore">0</strong></p>
+          <button id="restartBtn">Play Again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const startOverlay = document.getElementById('startOverlay');
+    const gameOverOverlay = document.getElementById('gameOverOverlay');
+    const finalScoreEl = document.getElementById('finalScore');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+
+    let dog = {x:120,y:0,vy:0,w:80,h:80,jumping:false};
+    let groundHeight = 100;
+    let score = 0;
+    let speed = 300;
+    let obstacles = [];
+    let running = false;
+    let lastTime = null;
+    let spawnTimer = 0;
+
+    const emojis = {
+      dog:['🐕','🐶'],
+      obstacles:['🌵','🪨','🌲','🪵'],
+      clouds:['☁️','⛅','🌤️']
+    };
+
+    function reset(){
+      dog.y = 0; dog.vy = 0; dog.jumping = false;
+      score = 0; speed = 300; obstacles = []; lastTime = null;
+      scoreEl.textContent = 0;
+    }
+
+    function startGame(){
+      reset();
+      running = true;
+      startOverlay.style.display = 'none';
+      gameOverOverlay.style.display = 'none';
+      requestAnimationFrame(loop);
+    }
+
+    function endGame(){
+      running = false;
+      finalScoreEl.textContent = Math.floor(score);
+      gameOverOverlay.style.display = 'flex';
+    }
+
+    function jump(){
+      if(!running) return startGame();
+      if(dog.jumping) return;
+      dog.vy = -650; dog.jumping = true;
+    }
+
+    function spawnObstacle(){
+      const emoji = emojis.obstacles[Math.floor(Math.random()*emojis.obstacles.length)];
+      const size = 60 + Math.random()*40;
+      obstacles.push({x:canvas.width+40,y:canvas.height-groundHeight-size,w:size,h:size,emoji});
+    }
+
+    function loop(ts){
+      if(!lastTime) lastTime = ts;
+      let dt = (ts-lastTime)/1000; lastTime = ts;
+
+      if(running){
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+
+        // Sky gradient
+        let sky = ctx.createLinearGradient(0,0,0,canvas.height);
+        sky.addColorStop(0,'#4facfe');
+        sky.addColorStop(1,'#00f2fe');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+
+        // Clouds (scrolling background)
+        ctx.font = '48px serif';
+        ctx.globalAlpha = 0.8;
+        for(let i=0;i<5;i++){
+          ctx.fillText(emojis.clouds[i%emojis.clouds.length], (ts/40+i*220)% (canvas.width+200)-200, 80+(i%2)*40);
+        }
+        ctx.globalAlpha = 1;
+
+        // Ground
+        ctx.fillStyle = '#228B22';
+        ctx.fillRect(0,canvas.height-groundHeight,canvas.width,groundHeight);
+
+        // Physics
+        dog.vy += 1800*dt;
+        dog.y += dog.vy*dt;
+        if(dog.y>0){dog.y=0;dog.vy=0;dog.jumping=false;}
+
+        // Draw dog
+        ctx.font = dog.h+'px serif';
+        ctx.fillText(emojis.dog[Math.floor(ts/150)%2], dog.x, canvas.height-groundHeight-dog.y);
+
+        // Spawn obstacles
+        spawnTimer-=dt;
+        if(spawnTimer<=0){spawnObstacle(); spawnTimer=1+Math.random()*1.2;}
+
+        // Move & draw obstacles
+        for(let i=obstacles.length-1;i>=0;i--){
+          let ob=obstacles[i];
+          ob.x-=speed*dt;
+          ctx.font=ob.h+'px serif';
+          ctx.fillText(ob.emoji, ob.x, ob.y+ob.h);
+          if(ob.x+ob.w<0) obstacles.splice(i,1);
+          // Collision
+          if(dog.x<ob.x+ob.w && dog.x+dog.w>ob.x && canvas.height-groundHeight-dog.y<ob.y+ob.h && canvas.height-groundHeight-dog.y+dog.h>ob.y){
+            endGame();
+            return;
+          }
+        }
+
+        // Update score & difficulty
+        score+=dt*50; scoreEl.textContent=Math.floor(score);
+        speed+=dt*8;
+
+        requestAnimationFrame(loop);
+      }
+    }
+
+    window.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();jump();}});
+    canvas.addEventListener('mousedown',jump);
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();jump();},{passive:false});
+    startBtn.addEventListener('click',startGame);
+    restartBtn.addEventListener('click',startGame);
+  </script>
+</body>
+</html>
