@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Zombie Decisions — Choose to Survive</title>
+<style>
+  :root{--w:960px;--bg:#0b0f14}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#071017 0%, #0b1720 100%);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#e6eef3}
+  .wrap{width:var(--w);max-width:95vw;background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));border-radius:14px;padding:18px;box-shadow:0 12px 40px rgba(2,6,10,0.7)}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  header h1{font-size:20px;margin:0}
+  .hud{display:flex;gap:12px}
+  .stat{background:rgba(255,255,255,0.03);padding:8px 12px;border-radius:10px;min-width:110px;text-align:center}
+  .stat b{display:block;font-size:18px}
+  main{display:grid;grid-template-columns:1fr 360px;gap:14px}
+  .story{background:linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.2));padding:16px;border-radius:10px;min-height:300px}
+  .scene-title{font-weight:700;margin:0 0 6px}
+  .scene-desc{line-height:1.5;margin:8px 0}
+  .choices{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  button.choice{background:#1b6cff;border:0;padding:12px;border-radius:8px;color:white;font-weight:700;text-align:left;cursor:pointer}
+  .side{background:rgba(255,255,255,0.02);padding:12px;border-radius:10px;height:100%}
+  .resources{display:flex;flex-direction:column;gap:8px}
+  .resource{display:flex;justify-content:space-between;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px}
+  .log{margin-top:12px;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px;max-height:180px;overflow:auto}
+  footer{margin-top:12px;display:flex;justify-content:space-between;align-items:center}
+  .small{font-size:12px;opacity:0.8}
+  .center{display:flex;align-items:center;justify-content:center}
+  .big-emoji{font-size:48px}
+  .btn-row{display:flex;gap:8px;margin-top:8px}
+  .muted{opacity:0.7}
+  .bar{height:10px;background:#0c2b1f;border-radius:8px;overflow:hidden}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,#3fe27b,#27b47a);width:50%}
+  @media (max-width:920px){main{grid-template-columns:1fr} .side{order:2}}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Zombie Decisions — Choose to Survive 🧟‍♀️</h1>
+      <div class="hud">
+        <div class="stat">Day <b id="day">1</b><span class="small muted">elapsed</span></div>
+        <div class="stat">Health <b id="health">100</b></div>
+        <div class="stat">Party <b id="party">3</b></div>
+      </div>
+    </header>
+
+    <main>
+      <section class="story">
+        <div class="center big-emoji" id="sceneEmoji">🏚️</div>
+        <h2 class="scene-title" id="sceneTitle">Abandoned Suburb</h2>
+        <p class="scene-desc" id="sceneDesc">You wake up in a safe room with your small group. Supplies are low and unpredictable sounds echo outside. The world is silent but dangerous.</p>
+
+        <div class="choices" id="choices"></div>
+
+        <div class="log" id="log"></div>
+      </section>
+
+      <aside class="side">
+        <div class="resources">
+          <div class="resource"><span>Supplies 🍎</span><strong id="supplies">20</strong></div>
+          <div class="resource"><span>Ammo 🔫</span><strong id="ammo">8</strong></div>
+          <div class="resource"><span>Morale 💙</span><strong id="morale">75</strong></div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="small">Survivors</div>
+          <div class="muted" id="peopleList">You, Alex, Sam</div>
+        </div>
+
+        <div class="btn-row">
+          <button id="saveBtn">Save</button>
+          <button id="loadBtn">Load</button>
+          <button id="resetBtn">New Game</button>
+        </div>
+
+        <div style="margin-top:12px" class="small">Tip: choices change story, resources and endings. Manage supplies & morale to survive multiple days.</div>
+      </aside>
+    </main>
+
+    <footer>
+      <div class="small">Simple demo — branching scenarios, random events, and multiple endings.</div>
+      <div><button id="shareBtn">Share Result</button></div>
+    </footer>
+  </div>
+
+<script>
+// Game state
+const state = {
+  day:1, health:100, supplies:20, ammo:8, morale:75, party:3, people:['You','Alex','Sam'],
+  sceneId:null, log:[]
+};
+
+const scenes = {
+  start: {
+    title:'Abandoned Suburb', emoji:'🏚️', desc:'You wake up in an upstairs room. The radio is dead and the street below is quiet. You need a plan.',
+    choices:[
+      {text:'Scavenge nearby houses (low risk)', func:()=>scavenge('low')},
+      {text:'Scout the grocery store (medium risk)', func:()=>scavenge('med')},
+      {text:'Fortify shelter (rest and repair)', func:fortify}
+    ]
+  },
+  crossroads: {
+    title:'Road Crossroads', emoji:'🛣️', desc:'A blocked road and a burning car — do you go around, through, or wait?',
+    choices:[
+      {text:'Go around (longer, safer)', func:()=>travel('around')},
+      {text:'Through the car lot (risky)', func:()=>travel('through')},
+      {text:'Wait till dark (ambush chance)', func:()=>travel('wait')}
+    ]
+  },
+  refugeeCamp: {
+    title:'Makeshift Camp', emoji:'🏕️', desc:'You find a small group of survivors. They look wary.',
+    choices:[
+      {text:'Trade supplies for info', func:trade},
+      {text:'Keep distance and move on', func:moveOn},
+      {text:'Invite them to join (increase party)', func:recruit}
+    ]
+  }
+};
+
+// UI refs
+const dayEl = document.getElementById('day');
+const healthEl = document.getElementById('health');
+const suppliesEl = document.getElementById('supplies');
+const ammoEl = document.getElementById('ammo');
+const moraleEl = document.getElementById('morale');
+const partyEl = document.getElementById('party');
+const peopleListEl = document.getElementById('peopleList');
+const sceneTitleEl = document.getElementById('sceneTitle');
+const sceneDescEl = document.getElementById('sceneDesc');
+const sceneEmojiEl = document.getElementById('sceneEmoji');
+const choicesEl = document.getElementById('choices');
+const logEl = document.getElementById('log');
+const scoreShare = document.getElementById('shareBtn');
+
+// init
+function init(){
+  loadScene('start');
+  updateUI();
+}
+
+function updateUI(){
+  dayEl.textContent = state.day;
+  healthEl.textContent = Math.max(0, Math.floor(state.health));
+  suppliesEl.textContent = Math.max(0, Math.floor(state.supplies));
+  ammoEl.textContent = Math.max(0, Math.floor(state.ammo));
+  moraleEl.textContent = Math.max(0, Math.floor(state.morale));
+  partyEl.textContent = state.party;
+  peopleListEl.textContent = state.people.join(', ');
+  renderLog();
+}
+
+function renderLog(){
+  logEl.innerHTML = '';
+  state.log.slice(-10).forEach(entry=>{
+    const p = document.createElement('div'); p.textContent = entry; p.style.padding='6px 0'; logEl.appendChild(p);
+  });
+}
+
+function pushLog(txt){ state.log.push(`Day ${state.day}: ${txt}`); renderLog(); }
+
+function clearChoices(){ choicesEl.innerHTML = ''; }
+
+function loadScene(id){
+  state.sceneId = id;
+  const s = scenes[id];
+  sceneTitleEl.textContent = s.title;
+  sceneDescEl.textContent = s.desc;
+  sceneEmojiEl.textContent = s.emoji||'❓';
+  clearChoices();
+  s.choices.forEach(c=>{
+    const btn = document.createElement('button'); btn.className='choice'; btn.textContent=c.text;
+    btn.addEventListener('click',()=>{ c.func(); });
+    choicesEl.appendChild(btn);
+  });
+}
+
+// Actions
+function scavenge(risk){
+  // risk: low, med
+  let baseSupplies = risk==='low' ? rand(4,9) : rand(8,18);
+  let zombieChance = risk==='low' ? 0.18 : 0.42;
+  if(Math.random() < zombieChance){
+    // encounter
+    const fight = Math.random() < (state.ammo/ (state.ammo+4));
+    if(fight && state.ammo>0){
+      const used = Math.min(state.ammo, rand(1,3)); state.ammo -= used;
+      const hurt = rand(5,18);
+      state.health -= hurt; state.supplies += baseSupplies; state.morale -= 6;
+      pushLog(`Encountered zombies while scavenging — used ${used} ammo, lost ${hurt} health, found ${baseSupplies} supplies.`);
+    } else {
+      // stumble and run
+      const lost = rand(4,12); state.health -= lost; state.supplies += Math.floor(baseSupplies/2); state.morale -=10;
+      pushLog(`Ambushed! You escaped but were injured (-${lost} health) and found fewer supplies.`);
+    }
+  } else {
+    state.supplies += baseSupplies; state.morale += 4; pushLog(`Scavenged safely and found ${baseSupplies} supplies.`);
+  }
+  endDay();
+}
+
+function fortify(){
+  const usedSupplies = Math.min(state.supplies, rand(3,8)); state.supplies -= usedSupplies;
+  state.morale += 8; state.health += 6; pushLog(`You reinforced the shelter using ${usedSupplies} supplies. Health +6, Morale +8.`);
+  endDay();
+}
+
+function travel(mode){
+  if(mode==='around'){
+    state.supplies -= 2; state.morale -=2; pushLog('Took the long route. Safer but costly.');
+  } else if(mode==='through'){
+    // higher chance of encounter
+    if(Math.random()<0.5){
+      state.health -= rand(6,22); state.supplies += rand(3,10); state.morale -=5; pushLog('Fought through a dangerous zone. Injuries sustained but some supplies gained.');
+    } else { state.supplies += rand(5,12); pushLog('Made it through quickly and found supplies.'); }
+  } else {
+    // wait
+    if(Math.random()<0.35){ state.morale -=10; pushLog('Night fell. Tension rose and morale dropped.'); }
+    else { state.morale +=3; pushLog('Night passed without incident.'); }
+  }
+  // random next scene
+  const next = choose(['refugeeCamp','crossroads']); loadScene(next);
+  endDay();
+}
+
+function trade(){
+  if(state.supplies < 3){ pushLog('Not enough supplies to trade.'); endDay(); return; }
+  const cost = 3; state.supplies -= cost; state.morale += 5; state.ammo += rand(1,4);
+  pushLog(`Traded ${cost} supplies for info and ammo (+${state.ammo>0? 'ammo':''}).`);
+  endDay();
+}
+
+function moveOn(){ pushLog('You avoided interaction and kept moving.'); endDay(); }
+
+function recruit(){
+  if(Math.random() < 0.5){ state.people.push('Riley'); state.party +=1; state.morale +=6; pushLog('A survivor joined your group. Party +1.'); }
+  else { state.morale -=5; pushLog('They refused to join and left.'); }
+  endDay();
+}
+
+// helpers
+function endDay(){
+  // natural decay
+  state.day +=1;
+  state.supplies -= Math.max(0, Math.floor(state.party*0.8));
+  state.morale = clamp(state.morale - rand(1,4), 0, 100);
+  if(state.supplies < 0){ state.health += state.supplies * 2; state.supplies = 0; pushLog('Supplies ran out — health deteriorates.'); }
+  if(state.health <= 0 || state.party <= 0) { gameOver(); return; }
+  // random event chance
+  randomEvent();
+  updateUI();
+  // pick an automatic next scene
+  const next = choose(['crossroads','refugeeCamp','start']);
+  loadScene(next);
+}
+
+function randomEvent(){
+  const r = Math.random();
+  if(r < 0.08){ // small chance of big event
+    const event = rand(1,3);
+    if(event===1){ state.ammo += rand(2,6); pushLog('Found a hidden cache of ammo!'); }
+    else if(event===2){ state.supplies += rand(6,14); pushLog('Stumbled upon canned goods in a basement.'); }
+    else { state.health -= rand(6,18); pushLog('A rotten floor collapsed — injuries.'); }
+  }
+}
+
+function gameOver(){
+  pushLog('Your group could not continue. The story ends here.');
+  // show summary overlay
+  alert(`Game Over — Day ${state.day}. Final supplies: ${state.supplies}, Health: ${Math.max(0,Math.floor(state.health))}`);
+  // offer restart
+}
+
+// utilities
+function rand(min,max){return Math.floor(Math.random()*(max-min+1))+min}
+function choose(arr){return arr[Math.floor(Math.random()*arr.length)]}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+
+// Save/load
+document.getElementById('saveBtn').addEventListener('click',()=>{ localStorage.setItem('zombieSave',JSON.stringify(state)); pushLog('Game saved.'); });
+document.getElementById('loadBtn').addEventListener('click',()=>{ const s = localStorage.getItem('zombieSave'); if(s){ Object.assign(state, JSON.parse(s)); updateUI(); pushLog('Game loaded.'); loadScene(state.sceneId||'start'); } else { pushLog('No save found.'); } });
+document.getElementById('resetBtn').addEventListener('click',()=>{ if(confirm('Start a new game?')){ Object.assign(state,{day:1,health:100,supplies:20,ammo:8,morale:75,party:3,people:['You','Alex','Sam'],log:[]}); updateUI(); loadScene('start'); pushLog('New game started.'); }});
+
+// share button: copies a short summary
+scoreShare.addEventListener('click',()=>{ const summary = `Zombie Decisions — Day ${state.day}, Health ${Math.max(0,Math.floor(state.health))}, Supplies ${state.supplies}, Party ${state.party}`; navigator.clipboard.writeText(summary).then(()=>alert('Summary copied to clipboard!')); });
+
+// start
+init();
+
+</script>
+</body>
+</html>
