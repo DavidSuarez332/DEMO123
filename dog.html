@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dog Runner 🐕 — Emoji Game</title>
+  <style>
+    :root{--bg:#87CEEB;--ground:#7c4f1a}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    body{display:flex;align-items:center;justify-content:center;background:linear-gradient(#bfe9ff, var(--bg));}
+    .game-wrap{width:900px;max-width:95vw;aspect-ratio:16/9;background:linear-gradient(#dff8ff, #8fdcff);box-shadow:0 10px 30px rgba(0,0,0,0.15);border-radius:12px;overflow:hidden;position:relative}
+    canvas{display:block;width:100%;height:100%}
+    .ui{position:absolute;left:12px;top:12px;color:#073b4c;font-weight:700;text-shadow:0 1px 0 rgba(255,255,255,0.6);}
+    .controls{position:absolute;right:12px;top:12px;color:#073b4c}
+    .footer{position:absolute;left:12px;bottom:12px;color:#073b4c;font-weight:600}
+    .btn{background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);cursor:pointer}
+    .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(rgba(255,255,255,0.5),rgba(255,255,255,0.25));backdrop-filter:blur(2px)}
+    .panel{background:rgba(255,255,255,0.95);padding:18px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.08);text-align:center}
+  </style>
+</head>
+<body>
+  <div class="game-wrap">
+    <canvas id="game"></canvas>
+    <div class="ui">Score: <span id="score">0</span></div>
+    <div class="controls">Press <strong>Space</strong> or <strong>Click</strong> to jump</div>
+    <div class="footer">Dog Runner — emojis only: 🐕🌳🪨🌵☁️</div>
+
+    <div id="start" class="overlay">
+      <div class="panel">
+        <h2>Dog Runner 🐕</h2>
+        <p>Jump over obstacles and get the highest score!</p>
+        <button id="startBtn" class="btn">Start</button>
+      </div>
+    </div>
+
+    <div id="gameover" class="overlay" style="display:none">
+      <div class="panel">
+        <h2>Game Over 💥</h2>
+        <p>Your score: <strong id="finalScore">0</strong></p>
+        <button id="retryBtn" class="btn">Play again</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Dog Runner — emoji canvas game
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha: false });
+let W, H, DPR = window.devicePixelRatio || 1;
+function resize(){
+  W = canvas.clientWidth; H = canvas.clientHeight;
+  canvas.width = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// game variables
+let running = false, score = 0, speed = 280; // px per second
+const gravity = 1500; // px/s^2
+const groundY = 0.78; // portion of canvas height where ground sits
+
+// entities
+const dog = { x: 90, y:0, vy:0, w:70, h:70, emoji: '🐕' };
+let obstacles = [];
+let lastTime = 0;
+let spawnTimer = 0;
+const spawnInterval = 1.2; // seconds (will decrease slowly to increase difficulty)
+let best = 0;
+
+const scoreEl = document.getElementById('score');
+const finalScoreEl = document.getElementById('finalScore');
+const startOverlay = document.getElementById('start');
+const gameoverOverlay = document.getElementById('gameover');
+
+function startGame(){
+  running = true; score = 0; speed = 280; obstacles = []; dog.y = 0; dog.vy = 0; spawnTimer = 0; lastTime = performance.now();
+  startOverlay.style.display = 'none';
+  gameoverOverlay.style.display = 'none';
+  requestAnimationFrame(loop);
+}
+function endGame(){
+  running = false; best = Math.max(best, Math.floor(score));
+  finalScoreEl.textContent = Math.floor(score);
+  gameoverOverlay.style.display = 'flex';
+}
+
+// controls
+function jump(){
+  if(!running) return;
+  // allow jump if on ground (simple small threshold)
+  const groundPixel = H * groundY;
+  if(dogBottom() >= groundPixel - 4){
+    dog.vy = -700; // jump velocity
+  }
+}
+window.addEventListener('keydown', e => { if(e.code === 'Space') { e.preventDefault(); jump(); } })
+canvas.addEventListener('pointerdown', jump);
+
+function dogBottom(){ return dog.y + dog.h; }
+
+function spawnObstacle(){
+  // choose random emoji obstacle
+  const opts = ['🌵','🪨','🌳','🪵','🚧'];
+  const emoji = opts[Math.floor(Math.random()*opts.length)];
+  const h = 48 + Math.random()*40;
+  const w = h; // roughly square
+  obstacles.push({ x: W + 40, y: H * groundY - h, w, h, emoji });
+}
+
+function update(dt){
+  // dt in seconds
+  // update dog
+  dog.vy += gravity * dt;
+  dog.y += dog.vy * dt;
+  // ground collision
+  const groundPixel = H * groundY;
+  if(dogBottom() > groundPixel){ dog.y = groundPixel - dog.h; dog.vy = 0; }
+
+  // spawn obstacles
+  spawnTimer += dt;
+  if(spawnTimer > spawnInterval){ spawnTimer = 0; spawnObstacle(); }
+
+  // move obstacles
+  for(let i = obstacles.length-1; i>=0; --i){
+    obstacles[i].x -= speed * dt;
+    // remove off-screen
+    if(obstacles[i].x + obstacles[i].w < -50) obstacles.splice(i,1);
+  }
+
+  // increase difficulty slowly
+  speed += 2 * dt * 10;
+
+  // scoring
+  score += dt * 10;
+
+  // collisions
+  for(const ob of obstacles){
+    if(rectIntersect(dog.x, dog.y, dog.w, dog.h, ob.x, ob.y, ob.w, ob.h)){
+      endGame();
+      break;
+    }
+  }
+}
+
+function rectIntersect(x1,y1,w1,h1,x2,y2,w2,h2){
+  return !(x2 > x1 + w1 || x2 + w2 < x1 || y2 > y1 + h1 || y2 + h2 < y1);
+}
+
+function draw(){
+  // background
+  ctx.fillStyle = '#8fdcff';
+  ctx.fillRect(0,0,W,H);
+
+  // sky clouds as emoji repeating
+  ctx.save();
+  ctx.font = Math.floor(32) + 'px serif';
+  for(let i=0;i<6;i++){
+    const x = (i*220 + (performance.now()*0.02) % 220) % (W+220) - 110;
+    ctx.fillText('☁️', x, 80 + (i%2)*10);
+  }
+  ctx.restore();
+
+  // ground
+  const gy = H * groundY;
+  ctx.fillStyle = '#7c4f1a';
+  ctx.fillRect(0, gy, W, H - gy);
+
+  // grass line
+  ctx.fillStyle = '#1f8a3d';
+  ctx.fillRect(0, gy - 12, W, 12);
+
+  // draw obstacles
+  ctx.save();
+  ctx.textAlign = 'left';
+  for(const ob of obstacles){
+    const size = Math.max(24, ob.h);
+    ctx.font = size + 'px serif';
+    ctx.fillText(ob.emoji, ob.x, ob.y + ob.h - 6);
+  }
+  ctx.restore();
+
+  // draw dog
+  ctx.save();
+  ctx.font = dog.h + 'px serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(dog.emoji, dog.x, dog.y + dog.h - 8);
+  ctx.restore();
+
+  // foreground small details (bones, tufts)
+  ctx.save();
+  ctx.font = '18px serif';
+  for(let i=0;i<10;i++){
+    const x = (i*220 + (performance.now()*0.12) % 220) % (W+220) - 110;
+    ctx.fillText('🌿', x, gy - 6);
+  }
+  ctx.restore();
+}
+
+function loop(t){
+  if(!running) return;
+  const dt = Math.min(0.05, (t - lastTime)/1000);
+  lastTime = t;
+  update(dt);
+  // clear
+  ctx.clearRect(0,0,W,H);
+  draw();
+  scoreEl.textContent = Math.floor(score);
+  requestAnimationFrame(loop);
+}
+
+// start/retry buttons
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('retryBtn').addEventListener('click', startGame);
+
+// expose a tiny cheat for testing: press R to respawn
+window.addEventListener('keydown', e => { if(e.key.toLowerCase() === 'r') startGame(); });
+
+// small polish: place dog on ground initially
+(function init(){
+  dog.h = 70; dog.w = 70; dog.y = H * groundY - dog.h;
+})();
+</script>
+</body>
+</html>
